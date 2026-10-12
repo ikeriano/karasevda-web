@@ -186,10 +186,168 @@ function crearExtras(cfg) {
   let ocioT = 0; function ocioMenu(activo) { clearTimeout(ocioT); if (!activo) return; ocioT = setTimeout(async () => { if (cfg.enMenu && !cfg.enMenu()) return; if (await aleatoriaReproduce(1)) ocioMenu(true); }, cfg.ocioMs || 60000); }
   ['pointerdown', 'keydown'].forEach(ev => addEventListener(ev, () => { if (ocioT) ocioMenu(true); }, true));
 
+  // ---------- ✨ Hacer mis propias promos: guionista automático (sin conexión) ----------
+  // Lee la descripción en palabras normales y saca nombres, fechas, horas, premios, tema y tono; escribe el guion
+  // (título, 3 líneas, día, hora y texto de la voz en off) con plantillas y gramática propias. Opcional: IA en línea gratis.
+  const IA = (() => {
+    const quita = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const rnd = sd => () => { sd = (sd + 0x6D2B79F5) | 0; let t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const DIAS = { lunes: 'lunes', martes: 'martes', miercoles: 'miércoles', jueves: 'jueves', viernes: 'viernes', sabado: 'sábado', domingo: 'domingo' };
+    const DIAS_PT = { lunes: 'segunda-feira', martes: 'terça-feira', miercoles: 'quarta-feira', jueves: 'quinta-feira', viernes: 'sexta-feira', sabado: 'sábado', domingo: 'domingo' };
+    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const MESES_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const NUM = ['cero', 'una', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'once', 'doce'];
+    const NUM_PT = ['zero', 'uma', 'duas', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez', 'onze', 'doze'];
+    const MIN = { 0: '', 15: ' y cuarto', 30: ' y media', 45: ' menos cuarto' };
+    const TEMAS = [ // [clave, palabras, nombre ES, nombre PT, tono por defecto]
+      ['navidad', /navidad|nochebuena|navidena|reyes|belen|papa noel|natal/, 'el especial de Navidad', 'o especial de Natal', 'emotivo'],
+      ['nochevieja', /nochevieja|fin de ano|uvas|campanadas|ano nuevo|reveillon/, 'el especial de Nochevieja', 'o especial de Ano-Novo', 'fiesta'],
+      ['halloween', /halloween|terror|miedo|zombi|fantasma|bruja|monstruo|susto/, 'el especial de terror', 'o especial de terror', 'misterio'],
+      ['verano', /verano|playa|vacaciones|piscina|calor|verao/, 'el especial de verano', 'o especial de verão', 'fiesta'],
+      ['famosos', /famos|estrella|celebrit|vip|invitad/, 'el especial con famosos', 'o especial com famosos', 'epico'],
+      ['final', /gran final|la final|final de temporada|ultimo programa|despedida/, 'la gran final', 'a grande final', 'epico'],
+      ['estreno', /estreno|nueva temporada|vuelve|regresa|primer programa|estreia/, 'el gran estreno', 'a grande estreia', 'epico'],
+      ['aniversario', /aniversario|cumple|programa \d+|\d+ programas|celebra/, 'el programa aniversario', 'o programa de aniversário', 'fiesta'],
+      ['sanvalentin', /san valentin|amor|parejas|enamorad|romant|namorad/, 'el especial de San Valentín', 'o especial do Dia dos Namorados', 'emotivo'],
+      ['futuro', /futur|ano 3000|robot|holograma|espacio|marte|galaxia|nave/, 'el especial del futuro', 'o especial do futuro', 'divertido'],
+      ['ninos', /nino|ninos|infantil|familia|peques|criancas/, 'el especial en familia', 'o especial em família', 'divertido'],
+    ];
+    const TONOS = [['divertido', /divert|risa|humor|gracios|loco|locura|cachond|comic|risas|engracad/], ['epico', /epic|emocionante|intens|tension|adrenalina|grande|enorme|histor|nunca visto|impresionante/],
+      ['emotivo', /emoti|emocion|corazon|lagrima|bonito|tierno|familia|recuerdo|saudade/], ['misterio', /misterio|secreto|sorpresa|enigma|oscur|nadie sabe|suspense/], ['fiesta', /fiesta|fiest|baile|musica|celebr|party|festa/], ['urgente', /hoy|esta noche|ahora|no te lo pierdas|ultima|urgente|ya/]];
+    const STOP = new Set('El La Los Las Un Una Unos Unas Y O De Del Al En Con Por Para Que Quiero Hazme Haz Una Promo Esta Este Ese Esa Lunes Martes Miércoles Jueves Viernes Sábado Domingo Navidad Nochevieja Halloween Hoy Mañana Noche Programa Especial Gran Final Ahora Caigo Millonario Cazador Cifras Letras Acerte Caia Kara Sevda Me Mi Mis Su Sus Se Si No Es A Ante Bajo Desde Hasta Sin Sobre Tras Muy Más Pero Como Cuando Donde Quiere Quieren Grok Bot San Valentín Año Euros Promo Promos Voz Bueno Vale Hola Oye Pon Dile Diga Que Lo Le Nos'.split(' '));
+    function analiza(desc, show) {
+      const d = String(desc || ''), q = quita(d); const r = { desc: d, nombres: [], dia: '', diaPT: '', hora: '', horaVoz: '', horaVozPT: '', premio: '', tema: null, tono: '', claves: [] };
+      // día
+      let m; const hoy = new Date();
+      if (/esta noche|hoy/.test(q)) r.dia = 'Esta noche', r.diaPT = 'Hoje à noite';
+      else if (/manana/.test(q) && !/de la manana|por la manana/.test(q)) r.dia = 'Mañana', r.diaPT = 'Amanhã';
+      for (const k in DIAS) if (new RegExp('\\b' + k + '\\b').test(q)) { r.dia = (/proximo|que viene/.test(q) ? 'El próximo ' : 'Este ') + DIAS[k]; r.diaPT = (k === 'sabado' || k === 'domingo' ? 'Neste ' : 'Nesta ') + DIAS_PT[k]; }
+      if ((m = q.match(/\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/))) { const mi = Math.max(0, MESES.indexOf(m[2] === 'setiembre' ? 'septiembre' : m[2])); r.dia = 'El ' + (+m[1]) + ' de ' + MESES[mi]; r.diaPT = 'Dia ' + (+m[1]) + ' de ' + MESES_PT[mi]; }
+      else if ((m = q.match(/\b(\d{1,2})\/(\d{1,2})\b/)) && +m[2] >= 1 && +m[2] <= 12) { r.dia = 'El ' + (+m[1]) + ' de ' + MESES[+m[2] - 1]; r.diaPT = 'Dia ' + (+m[1]) + ' de ' + MESES_PT[+m[2] - 1]; }
+      if (!r.dia && /nochebuena/.test(q)) r.dia = 'En Nochebuena', r.diaPT = 'Na véspera de Natal';
+      if (!r.dia && /nochevieja/.test(q)) r.dia = 'En Nochevieja', r.diaPT = 'Na véspera de Ano-Novo';
+      // hora
+      let h = null, mn = 0;
+      if ((m = q.match(/\b(\d{1,2})[:.h](\d{2})\b/))) h = +m[1], mn = +m[2];
+      else if ((m = q.match(/\ba las (\d{1,2}|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)( y media| y cuarto| menos cuarto)?( de la (noche|tarde|manana))?/))) { h = isNaN(+m[1]) ? NUM.indexOf(m[1] === 'una' ? 'una' : m[1]) : +m[1]; mn = m[2] === ' y media' ? 30 : m[2] === ' y cuarto' ? 15 : m[2] === ' menos cuarto' ? 45 : 0; if (m[2] === ' menos cuarto') h -= 1; if ((m[4] === 'noche' && h < 12 && h > 4) || (m[4] === 'tarde' && h < 12)) h += 12; if (!m[4] && h < 12 && h >= 1 && h <= 11 && h > 6) h += 12; }
+      else if ((m = q.match(/\b(\d{1,2})\s*(h|horas)\b/))) h = +m[1];
+      if (h != null && h >= 0 && h < 24) { r.hora = String(h).padStart(2, '0') + ':' + String(mn).padStart(2, '0'); const h12 = h % 12 || 12, hv = mn === 45 ? (h12 % 12) + 1 : h12; const fr = h >= 21 || h < 5 ? ' de la noche' : h >= 13 ? ' de la tarde' : h >= 6 && h < 12 ? ' de la mañana' : '';
+        r.horaVoz = (hv === 1 ? 'a la una' : 'a las ' + NUM[hv]) + (MIN[mn] != null ? MIN[mn] : ' y ' + mn) + fr; r.horaVozPT = (hv === 1 ? 'à uma' : 'às ' + NUM_PT[hv]) + (mn === 30 ? ' e meia' : mn ? ' e ' + mn : '') + (h >= 18 || h < 5 ? ' da noite' : h >= 12 ? ' da tarde' : ' da manhã'); }
+      // premio
+      if ((m = d.match(/(\d[\d.,]*)\s*(mil\s*)?(€|euros?|reais|r\$)/i)) || (m = d.match(/(?:€|R\$)\s*(\d[\d.,]*)/i))) { let n = +String(m[1]).replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.'); if (/mil/i.test(m[2] || '')) n *= 1000; if (n) r.premio = n; }
+      if (!r.premio && /bote|premio|millon|dinero/.test(q)) r.premio = /millon/.test(q) ? 1000000 : 0;
+      // nombres propios (mayúscula que no es inicio de frase ni palabra común; también «con X», «llamad@ X»)
+      const toks = d.replace(/[«»"“”()]/g, ' ').split(/\s+/); const N = [];
+      toks.forEach((t, i) => { const w = t.replace(/[.,;:!?¡¿]+$/g, '').replace(/^[¡¿]+/, ''); const prev = toks[i - 1] || ''; const ini = i === 0 || /[.!?]$/.test(prev);
+        if (/^[A-ZÁÉÍÓÚÑÖÜÇ][a-záéíóúñöüçş]+$/.test(w) && !STOP.has(w) && (!ini || /^(con|y|a|llamad[oa]s?)$/i.test(prev)) && !(show && quita(show).includes(quita(w)))) {
+          if (N.length && toks[i - 1] && /^[A-ZÁÉÍÓÚÑ]/.test(toks[i - 1]) && N[N.length - 1].endsWith(toks[i - 1].replace(/[.,;:!?]+$/, '')) && !/[.,;:]$/.test(toks[i - 1])) N[N.length - 1] += ' ' + w; else N.push(w); } });
+      r.nombres = [...new Set(N)].slice(0, 4);
+      for (const T of TEMAS) if (T[1].test(q)) { r.tema = T; break; }
+      for (const [k, re] of TONOS) if (re.test(q)) { r.tono = k; break; }
+      if (!r.tono) r.tono = r.tema ? r.tema[4] : 'epico';
+      // palabras clave: sustantivos largos que no son paja
+      const paja = /^(quiero|hazme|hacer|promo|promos|programa|especial|que|para|sobre|donde|cuando|tiene|tenga|salga|salgan|haya|esta|este|noche|viernes|sabado|domingo|lunes|martes|miercoles|jueves|manana|euros|mucha|mucho|muchos|muchas|todos|todas|gente|nuestro|nuestra|nuevo|nueva|decir|diga|digan|super|voz|algo|cosa|cosas|ganar|premio|tambien|porque)$/;
+      const yaT = w => (r.tema && r.tema[1].test(w)) || TONOS.some(([, re]) => re.test(w)) || /octubre|noviembre|diciembre|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|temporada|final|emocion|divertid/.test(w);
+      r.claves = [...new Set(q.replace(/[^a-zñ ]/g, ' ').split(/\s+/).filter(w => w.length > 4 && !paja.test(w) && !yaT(w) && !r.nombres.some(n => quita(n).includes(w))))].slice(0, 5);
+      return r;
+    }
+    const lista = a => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1];
+    const listaPT = a => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1];
+    const euros = (n, pt) => !n ? '' : n >= 1e6 ? (n === 1e6 ? (pt ? 'um milhão' : 'un millón') : (n / 1e6).toLocaleString('es-ES') + (pt ? ' milhões' : ' millones')) + (pt ? ' de reais' : ' de euros') : n.toLocaleString('es-ES') + (pt ? ' reais' : ' euros');
+    const ES = {
+      gancho: { divertido: ['¡Agárrate, que vienen curvas!', '¡Prepárate para reír sin parar!', '¡Atención, que esto se descontrola!', '¡Lo nunca visto: risas aseguradas!'],
+        epico: ['¡Nunca antes se había visto algo así!', '¡Llega el programa más grande del año!', '¡Prepárate, porque esto es historia!', '¡La espera ha terminado!'],
+        emotivo: ['Hay noches que no se olvidan.', 'Esta vez, el corazón también juega.', 'Una noche para emocionarse.', 'Algunos momentos se quedan para siempre.'],
+        misterio: ['Nadie sabe lo que va a pasar…', 'Hay un secreto en el plató.', 'Algo extraño está a punto de ocurrir.', 'Las luces se apagan… y empieza el juego.'],
+        fiesta: ['¡Que suene la música, que empieza la fiesta!', '¡Esto es una fiesta y estás invitado!', '¡Luces, música y mucha diversión!', '¡Sube el volumen, que llega la gran fiesta!'],
+        urgente: ['¡No te lo puedes perder!', '¡Atención, que ya llega!', '¡Última llamada!', '¡Quedan muy pocas horas!'] },
+      medio: ['{SHOW} vuelve con {TEMA}.', '{SHOW} presenta {TEMA}.', 'Llega {TEMA} de {SHOW}.', 'Te esperamos en {TEMA} de {SHOW}.'],
+      nombres: ['Con {N}, frente a frente.', '{N} se juegan el todo por el todo.', '¿Podrán {N} con todas las preguntas?', '{N} lo darán todo en el plató.'],
+      nombre1: ['{N} se lo juega todo.', '¿Podrá {N} llegar hasta el final?', '{N} lo dará todo en el plató.', 'Todos los ojos estarán puestos en {N}.'],
+      premio: ['¡Hay {P} en juego!', '¡Un bote de {P} espera a alguien!', '¿Quién se llevará los {P}?', '{P} esperan al más listo.'],
+      claves: ['Con {K} y muchas sorpresas.', 'Habrá {K}, y mucho más.', '{K}: todo puede pasar.'],
+      cierre: { divertido: ['¡No faltes, que nos vamos a reír!', '¡Ven a pasarlo en grande!'], epico: ['¡No te lo pierdas!', '¡Será inolvidable!'], emotivo: ['Te esperamos.', 'Una cita que no puedes perderte.'], misterio: ['¿Te atreves a descubrirlo?', '¿Quién se llevará el premio?'], fiesta: ['¡Te esperamos en la fiesta!', '¡Ven a celebrarlo con nosotros!'], urgente: ['¡Corre, que empieza!', '¡No llegues tarde!'] },
+      titulo: { divertido: ['¡{SHOW}: risas a lo grande!', '{TEMAT}: ¡qué locura!'], epico: ['{TEMAT} de {SHOW}', '¡{SHOW}, como nunca!'], emotivo: ['{SHOW}: una noche especial', '{TEMAT}'], misterio: ['{SHOW}: el secreto', '¿Quién ganará?'], fiesta: ['¡Fiesta en {SHOW}!', '{TEMAT}: ¡a celebrar!'], urgente: ['¡{SHOW}, {DIA}!', '¡No te lo pierdas!'] },
+      cuando: '{DIA} {HORA}, en {SHOW}.', cuandoSinDia: 'Muy pronto, en {SHOW}.', tema0: 'un programa muy especial'
+    };
+    const PT = {
+      gancho: { divertido: ['Segura essa, que vem confusão!', 'Prepare-se para rir sem parar!', 'Atenção, que isto vai sair do controle!', 'Nunca visto: risadas garantidas!'],
+        epico: ['Nunca se viu nada igual!', 'Chega o maior programa do ano!', 'Prepare-se, porque isto é história!', 'A espera acabou!'],
+        emotivo: ['Há noites que não se esquecem.', 'Desta vez, o coração também joga.', 'Uma noite para se emocionar.', 'Alguns momentos ficam para sempre.'],
+        misterio: ['Ninguém sabe o que vai acontecer…', 'Há um segredo no estúdio.', 'Algo estranho está para acontecer.', 'As luzes se apagam… e começa o jogo.'],
+        fiesta: ['Solta a música, que a festa começou!', 'Isto é uma festa e você está convidado!', 'Luzes, música e muita diversão!', 'Aumenta o som, que chegou a grande festa!'],
+        urgente: ['Você não pode perder!', 'Atenção, que já está chegando!', 'Última chamada!', 'Faltam poucas horas!'] },
+      medio: ['{SHOW} volta com {TEMA}.', '{SHOW} apresenta {TEMA}.', 'Chegou {TEMA} do {SHOW}.', 'Esperamos você em {TEMA} do {SHOW}.'],
+      nombres: ['Com {N}, frente a frente.', '{N} vão arriscar tudo.', 'Será que {N} acertam todas?', '{N} vão dar tudo no estúdio.'],
+      nombre1: ['{N} vai arriscar tudo.', 'Será que {N} chega até o final?', '{N} vai dar tudo no estúdio.', 'Todos os olhos em {N}.'],
+      premio: ['Tem {P} em jogo!', 'Um prêmio de {P} espera alguém!', 'Quem vai levar os {P}?', '{P} esperam o mais esperto.'],
+      claves: ['Com {K} e muitas surpresas.', 'Vai ter {K}, e muito mais.', '{K}: tudo pode acontecer.'],
+      cierre: { divertido: ['Não falte, que vamos rir muito!', 'Venha se divertir!'], epico: ['Não perca!', 'Vai ser inesquecível!'], emotivo: ['Esperamos você.', 'Um encontro imperdível.'], misterio: ['Tem coragem de descobrir?', 'Quem vai levar o prêmio?'], fiesta: ['Esperamos você na festa!', 'Venha comemorar com a gente!'], urgente: ['Corra, que já vai começar!', 'Não se atrase!'] },
+      titulo: { divertido: ['{SHOW}: risadas em dobro!', '{TEMAT}: que loucura!'], epico: ['{TEMAT} do {SHOW}', '{SHOW}, como nunca!'], emotivo: ['{SHOW}: uma noite especial', '{TEMAT}'], misterio: ['{SHOW}: o segredo', 'Quem vai ganhar?'], fiesta: ['Festa no {SHOW}!', '{TEMAT}: vamos comemorar!'], urgente: ['{SHOW}, {DIA}!', 'Não perca!'] },
+      cuando: '{DIA} {HORA}, no {SHOW}.', cuandoSinDia: 'Em breve, no {SHOW}.', tema0: 'um programa muito especial'
+    };
+    function escribe(a, show, sem, pt) {
+      const L = pt ? PT : ES, r = rnd(sem * 7919 + 13 + (pt ? 1 : 0)), uno = x => x[Math.floor(r() * x.length)], tono = a.tono;
+      const tema = a.tema ? (pt ? a.tema[3] : a.tema[2]) : L.tema0, temaT = (x => x[0].toUpperCase() + x.slice(1))(tema.replace(/^(el|la|o|a|un|um) /, ''));
+      const P = euros(a.premio, pt), N = (pt ? listaPT : lista)(a.nombres), K = (pt ? listaPT : lista)(a.claves.slice(0, 2)), dia = pt ? a.diaPT : a.dia;
+      const s = t => t.replace(/\{SHOW\}/g, show).replace(/\{TEMA\}/g, tema).replace(/\{TEMAT\}/g, temaT).replace(/\{P\}/g, P).replace(/\{N\}/g, N).replace(/\{K\}/g, K).replace(/\{DIA\}/g, (dia || '').toLowerCase()).replace(/\{HORA\}/g, '').replace(/\s+([,.!?])/g, '$1').replace(/^\s*,\s*/, '').replace(/([!?])\./g, '$1').replace(/ de el /g, ' del ').trim();
+      const fr = [s(uno(L.gancho[tono] || L.gancho.epico)), s(uno(L.medio))];
+      if (a.nombres.length) fr.push(s(uno(a.nombres.length > 1 ? L.nombres : L.nombre1)));
+      if (P) fr.push(s(uno(L.premio))); if (a.claves.length && fr.length < 4 && r() < .6) fr.push(s(uno(L.claves)));
+      const cierre = s(uno(L.cierre[tono] || L.cierre.epico));
+      const cuandoVoz = dia ? (L.cuando.replace('{DIA}', dia).replace('{HORA}', (pt ? a.horaVozPT : a.horaVoz) || '').replace('{SHOW}', show).replace(/\s+,/, ',')) : L.cuandoSinDia.replace('{SHOW}', show);
+      const titulo = s(uno(L.titulo[tono] || L.titulo.epico)).slice(0, 60);
+      const lineas = [fr[1], fr[2] || fr[0], fr[3] || cierre].map(x => x.length > 70 ? x.slice(0, 67).replace(/\s+\S*$/, '') + '…' : x);
+      const textoVoz = [...fr, cuandoVoz[0].toUpperCase() + cuandoVoz.slice(1), cierre].join(' ').replace(/\s+/g, ' ').replace(/([!?])\./g, '$1');
+      return { titulo, lineas, dia: dia || (pt ? 'Em breve' : 'Muy pronto'), hora: a.hora, textoVoz };
+    }
+    async function enLinea(desc, show, pt) { // opcional: Pollinations (gratis, sin clave). Si falla o tarda, se usa el guionista sin conexión.
+      const pr = (pt ? 'Escreva em português do Brasil' : 'Escribe en español de España') + ` el guion de una promo de televisión de 4 frases cortas para el concurso «${show}», sin emojis, sin comillas, sin markdown, lista para leer en voz alta. Petición: ${desc}`;
+      const ct = new AbortController(), to = setTimeout(() => ct.abort(), 20000);
+      try { const r = await fetch('https://text.pollinations.ai/' + encodeURIComponent(pr), { signal: ct.signal }); if (!r.ok) throw 0; const t = (await r.text()).replace(/[*#_`>]/g, '').replace(/\s+/g, ' ').trim(); if (t.length < 20 || t.length > 900 || /<html|error/i.test(t)) throw 0; return t; } finally { clearTimeout(to); }
+    }
+    return { analiza, escribe, enLinea };
+  })();
+  async function panelPromoIA(alGuardar) {
+    const show = String(cfg.titulo() || '').trim(), dos = cfg.idioma2 || (window.__LANG ? 'pt' : ''), enPT = window.__LANG === 'pt';
+    const w = capa('✨ Hacer mis propias promos'); let sem = 1, a = null, ultimo = null;
+    w.v.appendChild($('p', 'opacity:.85;margin:2px 0 8px', 'Cuéntame con tus palabras qué promo quieres (o dícteselo al micrófono del teclado). Te escribo el guion listo para usar: lo puedes cambiar, pedir otra versión y producir la promo con la voz Piper, las imágenes y la música del juego.'));
+    const zd = sinTeclas($('textarea', 'width:100%;box-sizing:border-box;min-height:84px;padding:8px;border-radius:8px;border:1px solid #888;background:#111a;color:#fff;font:15px system-ui'));
+    zd.placeholder = 'Ej.: promo divertida del especial de Navidad, el viernes a las 22:00, con Lucía y Marcos, bote de 50.000 euros'; zd.value = LSJ('ia_ultima', '');
+    const fila = $('div', 'display:flex;flex-wrap:wrap;gap:4px;align-items:center'); const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const lin = { on: LSJ('ia_online', false) }; const bl = btn('', b => { lin.on = !lin.on; LSG('ia_online', lin.on); pon(b); }); const pon = b => b.innerHTML = lin.on ? '🌐 Mejorar con IA en línea: SÍ (gratis, opcional)' : '🌐 IA en línea: NO (todo sin conexión)'; pon(bl);
+    const out = $('div', 'display:grid;gap:6px;margin-top:8px');
+    const lab = t => $('div', `color:${C1};font-weight:bold;margin-top:4px`, t);
+    const zT = inp('', 'Título', 60), zL = [0, 1, 2].map(i => inp('', 'Línea ' + (i + 1), 70)), zD = inp('', 'Día', 30), zH = inp('', 'Hora', 12);
+    const zV = sinTeclas($('textarea', 'width:100%;box-sizing:border-box;min-height:90px;padding:8px;border-radius:8px;border:1px solid #888;background:#111a;color:#fff;font:15px system-ui'));
+    const z2 = dos ? sinTeclas($('textarea', 'width:100%;box-sizing:border-box;min-height:70px;padding:8px;border-radius:8px;border:1px solid #888;background:#111a;color:#fff;font:15px system-ui')) : null;
+    const info = $('div', 'opacity:.75;font-size:13px');
+    const rellena = g => { zT.value = g.titulo; g.lineas.forEach((l, i) => zL[i].value = l); zD.value = g.dia; zH.value = g.hora || ''; zV.value = g.textoVoz; };
+    async function genera() {
+      const d = zd.value.trim(); if (!d) { toast('Escribe primero qué promo quieres'); zd.focus(); return; } LSG('ia_ultima', d);
+      a = IA.analiza(d, show); const es = IA.escribe(a, show, sem, false), pt = dos === 'pt' ? IA.escribe(a, show, sem, true) : null;
+      ultimo = { es, pt }; rellena(enPT && pt ? pt : es); if (z2) z2.value = (enPT ? es : pt || es).textoVoz;
+      info.innerHTML = `Entendido → tono <b>${esc(a.tono)}</b>${a.tema ? ', tema <b>' + esc(a.tema[2]) + '</b>' : ''}${a.nombres.length ? ', nombres <b>' + esc(a.nombres.join(', ')) + '</b>' : ''}${a.dia ? ', día <b>' + esc(a.dia) + '</b>' : ''}${a.hora ? ', hora <b>' + esc(a.hora) + '</b>' : ''}${a.premio ? ', premio <b>' + esc(a.premio.toLocaleString('es-ES')) + '</b>' : ''}. Versión ${sem}.`;
+      if (lin.on && navigator.onLine !== false) { info.innerHTML += ' · Pidiendo a la IA en línea…'; try { const t = await IA.enLinea(d, show, enPT); zV.value = t; info.innerHTML = info.innerHTML.replace(' · Pidiendo a la IA en línea…', ' · Texto de la voz mejorado en línea.'); } catch (e) { info.innerHTML = info.innerHTML.replace(' · Pidiendo a la IA en línea…', ' · Sin respuesta en línea: uso el guion sin conexión.'); } }
+    }
+    const recoge = () => ({ titulo: zT.value.trim() || show, lineas: zL.map(z => z.value.trim()), dia: zD.value.trim(), hora: zH.value.trim(), textoVoz: zV.value.trim(), voz: true, textoVoz2: z2 ? z2.value.trim() : '', ia: { desc: zd.value.trim(), version: sem } });
+    fila.append(btn('✍️ Escribir el guion', () => { sem = 1; genera(); }, true), btn('🔄 Otra versión', () => { sem++; genera(); }));
+    if (SR) fila.append(btn('🎤 Decirlo', b => { try { const s = new SR(); s.lang = enPT ? 'pt-BR' : 'es-ES'; s.interimResults = false; b.innerHTML = '🎤 Escuchando…'; s.onresult = e => { zd.value = (zd.value ? zd.value + ' ' : '') + e.results[0][0].transcript; }; s.onend = () => { b.innerHTML = '🎤 Decirlo'; }; s.onerror = () => { b.innerHTML = '🎤 Decirlo'; toast('Sin reconocimiento de voz aquí: usa el micrófono del teclado'); }; s.start(); } catch (e) { toast('Usa el micrófono del teclado para dictar'); } }));
+    fila.append(bl);
+    out.append(info, lab('Título'), zT, lab('Líneas en pantalla'), ...zL, lab('Día y hora'), zD, zH, lab('Texto de la voz en off (Piper, voz clara, sin conexión)'), zV);
+    if (z2) out.append(lab(enPT ? 'Versión en español' : 'Versão em português'), z2, btn(enPT ? '⇄ Usar la versión en español para la voz' : '⇄ Usar a versão em português para a voz', () => { const t = zV.value; zV.value = z2.value; z2.value = t; }));
+    const acc = $('div', 'margin-top:10px');
+    acc.append(btn('🎬 Producir la promo (fondo, logo, música…)', () => { if (!zV.value.trim()) return toast('Primero escribe el guion'); w.cierra(); editor(Object.assign(recoge(), { id: 'p' + Date.now(), creada: Date.now() }), alGuardar); }, true),
+      btn('▶ Vista previa', async () => { if (!zV.value.trim()) return toast('Primero escribe el guion'); w.o.style.display = 'none'; try { await reproducir(Object.assign({ logo: 'actual', musica: (cfg.musicas()[0] || [''])[0], transicion: 'fundido', fondo: { tipo: 'plato' } }, recoge())); } catch (e) { } w.o.style.display = 'flex'; }),
+      btn('💾 Guardar tal cual', async () => { if (!zV.value.trim()) return toast('Primero escribe el guion'); await promoGuarda(Object.assign({ id: 'p' + Date.now(), creada: Date.now(), logo: 'actual', musica: (cfg.musicas()[0] || [''])[0], transicion: 'fundido', fondo: { tipo: 'plato' } }, recoge())); toast('Promo guardada'); w.cierra(); alGuardar && alGuardar(); }),
+      btn('Cerrar', w.cierra));
+    w.v.append(zd, fila, out, acc); if (zd.value) genera(); return w;
+  }
+
   // ---------- Editor ----------
   async function editor(p0, alGuardar) {
     const p = Object.assign({ id: 'p' + Date.now(), creada: Date.now(), titulo: cfg.titulo(), lineas: ['', '', ''], dia: 'Esta noche', hora: '22:00', logo: 'actual', musica: (cfg.musicas()[0] || [''])[0], transicion: 'fundido', fondo: { tipo: 'plato' }, voz: true, textoVoz: '' }, JSON.parse(JSON.stringify(p0 || {})));
-    const w = capa(p0 ? '✏️ Editar promo' : '➕ Nueva promo'); const f = $('div', 'display:grid;gap:6px');
+    const w = capa(p0 && p0.ia ? '🎬 Producir mi promo' : p0 ? '✏️ Editar promo' : '➕ Nueva promo'); const f = $('div', 'display:grid;gap:6px');
     const zT = inp(p.titulo, 'Título', 60); const zL = p.lineas.map((l, i) => inp(l, 'Línea ' + (i + 1), 70)); const zD = inp(p.dia, 'Día (p. ej. Este viernes)', 30); const zH = inp(p.hora, 'Hora (p. ej. 22:00)', 12);
     const lg = sel([['actual', 'Logo actual'], ['titulo', 'Logo con título propio'], ...cfg.especiales().filter(e => e.id !== 'normal').map(e => [e.id, 'Logo especial ' + e.nombre])], p.logo);
     const mu = sel([['ninguna', 'Sin música'], ...cfg.musicas()], p.musica); const tr = sel([['fundido', 'Fundido'], ['barrido', 'Barrido'], ['zoom', 'Zoom']], p.transicion);
@@ -207,13 +365,13 @@ function crearExtras(cfg) {
   }
   async function panelPromos() {
     const w = capa('🎬 Creador de promos'); const c = $('div'); w.v.appendChild(c);
-    const pinta = async () => { c.innerHTML = ''; c.append($('p', 'opacity:.8;margin:2px 0 8px', 'Crea tus propias promos: aparecen en PROMOS, en las pausas de publicidad y al azar (menú en reposo y entre secciones). Voz en off con Piper dentro de la app, sin conexión.'), btn('➕ Nueva promo', () => editor(null, pinta), true));
+    const pinta = async () => { c.innerHTML = ''; c.append($('p', 'opacity:.8;margin:2px 0 8px', 'Crea tus propias promos: aparecen en PROMOS, en las pausas de publicidad y al azar (menú en reposo y entre secciones). Voz en off con Piper dentro de la app, sin conexión.'), btn('✨ Hacer mis propias promos', () => panelPromoIA(pinta), true), btn('➕ Nueva promo (a mano)', () => editor(null, pinta)));
       const L = await promosLista(); if (!L.length) c.append($('p', 'opacity:.7', 'Todavía no has creado ninguna promo.'));
       for (const p of L) { const r = $('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:6px 0;padding:6px;border:1px solid #fff3;border-radius:10px'); r.append($('div', 'flex:1;min-width:160px', `<b>${esc(p.titulo)}</b><br><span style="opacity:.75;font-size:13px">${esc([p.dia, p.hora].filter(Boolean).join(' · '))} · ${esc({ plato: 'plató 3D', video: 'vídeo propio', camlibre: 'cámara libre', cabecera: 'cabecera' }[p.fondo.tipo] || '')}</span>`), btn('▶', async () => { w.o.style.display = 'none'; await reproducir(p); w.o.style.display = 'flex'; }), btn('✏️', () => editor(p, pinta)), btn('⬇ Vídeo', async () => { w.o.style.display = 'none'; await exportar(p); w.o.style.display = 'flex'; }), btn('🗑', async () => { if (confirm('¿Borrar la promo «' + p.titulo + '»?')) { await promoBorra(p); pinta(); } })); c.appendChild(r); }
       c.append(btn('Cerrar', w.cierra)); };
     await pinta(); return w;
   }
-  return { guardar, guardarLogo, guardarTodos, logoPNG, panelLogo, panelHashtags, htActual, htDibuja, bugMostrar, bugOcultar, voz, vozPiper, vozPiezas, promosLista, promoGuarda, promoBorra, reproducir, exportar, aleatoria, aleatoriaReproduce, ocioMenu, panelPromos, editor, guardarTomaCamLibre, tomasLibres };
+  return { guardar, guardarLogo, guardarTodos, logoPNG, panelLogo, panelHashtags, htActual, htDibuja, bugMostrar, bugOcultar, voz, vozPiper, vozPiezas, promosLista, promoGuarda, promoBorra, reproducir, exportar, aleatoria, aleatoriaReproduce, ocioMenu, panelPromos, panelPromoIA, promoIA: IA, editor, guardarTomaCamLibre, tomasLibres };
 }
 if (typeof window !== 'undefined') window.crearExtras = crearExtras;
 // CÁMARA LIBRE: vuela por el plató 3D para hacer tus propias cabeceras. Táctil (joystick, arrastrar para mirar,
