@@ -62,7 +62,7 @@ function crearExtras(cfg) {
   let bug = null, bugTimer = 0;
   function bugMostrar(on = true) {
     const h = HT(); if (!on || !h.on || !htLista(cfg.especial()).length) { if (bug) bug.style.display = 'none'; return; }
-    if (!bug) { bug = $('div', 'position:fixed;z-index:9000;pointer-events:none;padding:5px 12px;border-radius:8px;font:bold clamp(12px,2.2vw,20px) system-ui;color:#fff;background:#0008;border-left:4px solid ' + C1 + ';transition:opacity .5s;text-shadow:0 1px 3px #000'); document.body.appendChild(bug); }
+    if (!bug) { bug = $('div', 'position:fixed;z-index:9000;pointer-events:none;padding:5px 12px;border-radius:8px;font:bold clamp(12px,2.2vw,20px) system-ui;color:#fff;background:#0008;border-left:4px solid ' + C1 + ';transition:opacity .5s;text-shadow:0 1px 3px #000'); bug.className = 'exHashBug'; document.body.appendChild(bug); }
     const pos = { si: 'top:10px;left:10px', sd: 'top:10px;right:10px', ii: 'bottom:12px;left:10px', id: 'bottom:12px;right:10px' }[h.pos] || 'top:10px;right:10px';
     bug.style.top = bug.style.bottom = bug.style.left = bug.style.right = ''; pos.split(';').forEach(p => { const [k, v] = p.split(':'); bug.style[k] = v; });
     bug.style.display = ''; const pon = () => { const t = htActual(); if (bug.textContent !== t) { bug.style.opacity = 0; setTimeout(() => { bug.textContent = t; bug.style.opacity = 1; }, 450); } };
