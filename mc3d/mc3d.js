@@ -226,7 +226,7 @@
         T.textos = grupos.length ? grupos : lim.length ? [lim.join(' ').slice(0, 60)] : [];
       }
       // audio: golpes (picos de energía) para sincronizar cortes, luces y efectos
-      let golpes = [], audio = false;
+      let golpes = [], audio = file.size >= 120e6;
       try {
         onProg && onProg({ f: 0.94, txt: 'Analizando la música y el sonido…' });
         if (file.size < 120e6) {
@@ -236,9 +236,9 @@
           for (let i = 0; i + hop < ch.length; i += hop) { let e = 0; for (let j = 0; j < hop; j += 4) e += ch[i + j] * ch[i + j]; env.push(Math.sqrt(e / (hop / 4))); }
           const mean = env.reduce((a, b) => a + b, 0) / env.length; let ult = -1;
           for (let i = 12; i < env.length; i++) { let loc = 0; for (let j = i - 12; j < i; j++) loc += env[j]; loc /= 12; if (env[i] > loc * 1.7 && env[i] > mean * 1.1 && i - ult > 12) { golpes.push(+(i * 0.02).toFixed(2)); ult = i; } }
-          audio = mean > 0.002; ctx.close && ctx.close();
+          let pico = 0; for (const x of env) if (x > pico) pico = x; audio = mean > 0.002 && pico > 0.01; ctx.close && ctx.close();
         }
-      } catch (e) { console.warn('[MC3D] audio', e); audio = true; }
+      } catch (e) { console.warn('[MC3D] audio (sin pista de sonido)', e); audio = false; }
       const guion = { v: 2, nombre: file.name || 'vídeo', desc, dur, hashtag: hashtagV, w: v.videoWidth, h: v.videoHeight, tomas, golpes, audio, fecha: Date.now(), seg: Math.round((performance.now() - t0) / 1000) };
       await borrar();
       if (file.size < 200e6) await tx('meta', 'readwrite', st => st.put(file, 'video')); else guion.audio = false;
@@ -276,20 +276,23 @@
     const tag = (String(desc != null ? desc : guion.desc || '').match(/#[\wÁÉÍÓÚÑáéíóúñ]+/) || [])[0];
     const espec = [['nochebuena', 'nochebuena'], ['navidad', 'navidad'], ['nochevieja', 'findeano'], ['fin de ano', 'findeano'], ['halloween', 'halloween'], ['verano', 'verano'], ['carnaval', 'carnaval'], ['prime time', 'primetime'], ['primetime', 'primetime'], ['ninos', 'ninos'], ['infantil', 'ninos']].find(([k]) => s.includes(k));
     const look = p.estilo === 'oscuro' ? 'morado' : p.colores.length ? (/#(ff|c0|a0|9a)/i.test(p.colores[0]) && /a040ff|9a3aff|c08aff|ff4fb0|ff2ad0/.test(p.colores.join()) ? 'morado' : /2f6bff|1ae0ff|1ae0d0|7ac8ff/.test(p.colores.join()) ? 'cian' : /ffffff|c8d0e0/.test(p.colores.join()) ? 'blanco' : null) : null;
-    return { dur: guion.dur / p.vel, vel: p.vel, tomas, banners, golpes: (guion.golpes || []).map(x => x / p.vel), hashtag: tag || (espec && CFG.hashtag ? CFG.hashtag(espec[1]) : null) || guion.hashtag || (CFG.hashtag ? CFG.hashtag(null) : null) || CFG.hashtagDef || ('#' + String(CFG.nombre).replace(/[^\wÁÉÍÓÚÑáéíóúñ]/g, '') + (espec ? espec[1][0].toUpperCase() + espec[1].slice(1) : '')), especial: espec && espec[1], efectos: p.efectos, look, mudo: p.mudo || !guion.audio, colores: p.colores, p };
+    return { dur: guion.dur / p.vel, vel: p.vel, tomas, banners, golpes: (guion.golpes || []).map(x => x / p.vel), hashtag: tag || (espec && CFG.hashtag ? CFG.hashtag(espec[1]) : null) || guion.hashtag || (CFG.hashtag ? CFG.hashtag(null) : null) || CFG.hashtagDef || ('#' + String(CFG.nombre).replace(/[^\wÁÉÍÓÚÑáéíóúñ]/g, '') + (espec ? espec[1][0].toUpperCase() + espec[1].slice(1) : '')), especial: espec && espec[1], efectos: p.efectos, look, mudo: p.mudo || !guion.audio, sinPista: !p.mudo && !guion.audio, colores: p.colores, p };
   }
   async function reproducir(opc = {}) {
     const guion = await getMeta(); if (!guion || guion.v !== 2) return false;
     if (!CFG.recrear) { alert('Este juego todavía no tiene plató para recrear la cabecera.'); return false; }
     const pl = plan(guion, opc.desc);
-    const vid = pl.mudo ? null : await getBlob('video'); const audio = vid ? URL.createObjectURL(vid) : null;
-    document.body.dataset.mc3d = '1'; try { await CFG.recrear(pl, { audio, ctx: opc.ctx || null, preview: !!opc.preview }); } finally { delete document.body.dataset.mc3d; if (audio) setTimeout(() => URL.revokeObjectURL(audio), 1000); }
+    const vid = pl.mudo ? null : await getBlob('video'); let audio = vid ? URL.createObjectURL(vid) : null, propio = !!audio;
+    // vídeo sin pista de audio o en silencio: suena la sintonía del propio juego
+    if (!audio && pl.sinPista && CFG.sintonia) { try { let u = typeof CFG.sintonia === 'function' ? await CFG.sintonia() : CFG.sintonia; if (u instanceof Blob) { u = URL.createObjectURL(u); propio = true; } if (u) { audio = u; pl.sintonia = true; } } catch (e) { console.warn('[MC3D] sintonía', e); } }
+    PISTA_SINT = !!pl.sintonia; document.body.dataset.mc3d = '1'; try { await CFG.recrear(pl, { audio, sintonia: !!pl.sintonia, sintoniaJuego: (!audio && pl.sinPista && CFG.sintoniaJuego) ? CFG.sintoniaJuego : null, ctx: opc.ctx || null, preview: !!opc.preview }); } finally { delete document.body.dataset.mc3d; if (audio && propio) setTimeout(() => URL.revokeObjectURL(audio), 1000); }
     return true;
   }
   /** reproductor de audio sincronizado para los adaptadores de cada juego */
+  let PISTA_SINT = false;
   function pista(url, vel) {
     const t0 = performance.now(); let a = null;
-    if (url) { a = new Audio(url); a.playbackRate = vel || 1; a.preservesPitch = false; a.play().catch(() => { a = null; }); }
+    if (url) { a = new Audio(url); a.playbackRate = vel || 1; a.preservesPitch = false; a.loop = !!PISTA_SINT; a.play().catch(() => { a = null; }); }
     return { t: () => a && !a.paused && !a.ended && a.currentTime > 0 ? a.currentTime / (vel || 1) : (performance.now() - t0) / 1000, parar: () => { try { a && a.pause(); } catch (e) { } }, el: () => a };
   }
   // ------------------------------------------------------------------ interfaz (Opciones › Mi cabecera 3D)
@@ -430,6 +433,7 @@
       const au = pista(op.audio, pl.vel), now = () => au.t(); const lt = ov.querySelector('.lt');
       let k = -1, cur = null, logo = null, bi = 0, gi = 0, ltT = 0; const bs = pl.banners.slice().sort((a, b) => a.t - b.t);
       try { env.antes && env.antes(pl); } catch (e) { console.warn('[MC3D]', e); }
+      let paraSint = null; try { if (op.sintoniaJuego) paraSint = op.sintoniaJuego(); } catch (e) { console.warn('[MC3D] sintonía', e); }
       env.toma && env.toma();
       try {
         await new Promise(res => { const paso = () => {
@@ -445,7 +449,7 @@
           if (ltT && t >= ltT) { lt.classList.remove('on'); ltT = 0; }
           while (gi < pl.golpes.length && t >= pl.golpes[gi]) { try { env.golpe && env.golpe(gi); } catch (e) { } gi++; }
           requestAnimationFrame(paso); }; requestAnimationFrame(paso); });
-      } finally { au.parar(); if (logo) logo.dispose(); ov.remove(); st.remove(); try { env.suelta && env.suelta(); env.despues && env.despues(); } catch (e) { console.warn('[MC3D]', e); } }
+      } finally { au.parar(); try { typeof paraSint === 'function' && paraSint(); } catch (e) { } if (logo) logo.dispose(); ov.remove(); st.remove(); try { env.suelta && env.suelta(); env.despues && env.despues(); } catch (e) { console.warn('[MC3D]', e); } }
     };
   }
   async function introPrograma(ctx) {

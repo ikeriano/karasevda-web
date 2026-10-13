@@ -1,5 +1,5 @@
 // Sin conexión: primero la red, y si no hay, lo guardado en caché
-const C = 'ks-1.0';
+const C = 'ks-1.4';
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== C).map(x => caches.delete(x)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', e => { if (e.request.method !== 'GET' || e.request.headers.get('range')) return;
